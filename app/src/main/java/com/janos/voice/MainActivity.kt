@@ -26,6 +26,7 @@ class MainActivity : Activity() {
     private lateinit var prefs: Prefs
     private lateinit var statusBox: TextView
     private lateinit var recentBox: LinearLayout
+    private lateinit var resultBox: TextView
     private val bg = Executors.newSingleThreadExecutor()
     private var pad = 0
 
@@ -54,7 +55,7 @@ class MainActivity : Activity() {
                 Manifest.permission.POST_NOTIFICATIONS), 3)
         })
         root.addView(btn("3) Battery se band na ho (zaroori)") { askBattery() })
-        root.addView(p("Infinix par: Settings → Apps → JanOS Voice → Battery → 'No restrictions', aur Phone Master/Auto-start mein JanOS Voice ON karein. Recent apps mein app ko lock bhi kar dein."))
+        root.addView(p("Infinix par: Settings > Apps > JanOS Voice > Battery > 'Unrestricted', aur Settings > Apps > JanOS Voice mein Wi-Fi/Mobile data access ON rakhein. Recent apps mein app ko lock bhi kar dein."))
 
         root.addView(h("Recent messages"))
         recentBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -100,6 +101,9 @@ class MainActivity : Activity() {
             Toast.makeText(this, "Save ho gaya", Toast.LENGTH_SHORT).show()
         })
         root.addView(btn("🧪 Test: Roman Pashto message sunao") { testVoice() })
+        root.addView(btn("🌐 Connection check") { checkConnection() })
+        resultBox = p("")
+        root.addView(resultBox)
 
         setContentView(ScrollView(this).apply { addView(root) })
     }
@@ -154,18 +158,27 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun show(msg: String) = runOnUiThread { resultBox.text = msg }
+
     private fun testVoice() {
-        Toast.makeText(this, "Test chal raha hai…", Toast.LENGTH_SHORT).show()
+        show("Test chal raha hai… (10-20 second lag sakte hain)")
         bg.execute {
             try {
+                val t0 = System.currentTimeMillis()
                 val s = Gemini(prefs).prepareIncoming("WhatsApp", "Ali", "sanga ye ror? sabaa kor ta rasha")
+                show("Gemini ne ${(System.currentTimeMillis() - t0) / 1000}s mein jawab diya [${s.lang}]:\n${s.speak}\nAb bol raha hai…")
                 Speaker.speak(this, s.lang, s.speak) { err ->
-                    if (err != null) runOnUiThread { Toast.makeText(this, err, Toast.LENGTH_LONG).show() }
+                    show(if (err != null) "Awaaz ka masla: $err" else "✅ Test mukammal:\n${s.speak}")
                 }
             } catch (e: Exception) {
-                runOnUiThread { Toast.makeText(this, "Masla: ${e.message}", Toast.LENGTH_LONG).show() }
+                show("❌ Masla: ${e.message}")
             }
         }
+    }
+
+    private fun checkConnection() {
+        show("Check kar raha hai…")
+        bg.execute { show(Gemini(prefs).ping()) }
     }
 
     private fun h(t: String) = TextView(this).apply {

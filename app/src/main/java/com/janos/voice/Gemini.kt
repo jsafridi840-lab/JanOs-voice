@@ -85,6 +85,44 @@ Return JSON only: {"script":"..."}
         call(JSONArray().put(JSONObject().put("text", prompt)))
 
     private fun call(parts: JSONArray): String {
+        try {
+            return callOnce(parts)
+        } catch (e: java.net.SocketTimeoutException) {
+            try {
+                return callOnce(parts)
+            } catch (e2: java.net.SocketTimeoutException) {
+                throw RuntimeException("Time out: Gemini server tak internet nahi pahuncha. App ka Wi-Fi/Mobile data access, VPN ya Data Saver check karein.")
+            }
+        } catch (e: java.net.UnknownHostException) {
+            throw RuntimeException("Internet nahi mila (DNS). Wi-Fi/data on hai? App ka network access check karein.")
+        }
+    }
+
+    /** Quick check: can we reach Gemini and is the key valid? Returns a human-readable line. */
+    fun ping(): String {
+        val t0 = System.currentTimeMillis()
+        return try {
+            val con = URL("https://generativelanguage.googleapis.com/v1beta/models/" + prefs.geminiModel)
+                .openConnection() as HttpURLConnection
+            con.connectTimeout = 30000
+            con.readTimeout = 30000
+            con.setRequestProperty("x-goog-api-key", prefs.geminiKey)
+            val code = con.responseCode
+            val body = (if (code in 200..299) con.inputStream else con.errorStream)
+                ?.bufferedReader()?.readText() ?: ""
+            val ms = System.currentTimeMillis() - t0
+            when (code) {
+                200 -> "✅ Gemini theek hai (${ms} ms), model: ${prefs.geminiModel}"
+                400, 401, 403 -> "❌ Gemini key ghalat ya band hai ($code): ${body.take(200)}"
+                404 -> "❌ Model naam ghalat hai (${prefs.geminiModel}). 'gemini-2.5-flash' likh kar dekhein."
+                else -> "❌ Gemini error $code: ${body.take(200)}"
+            }
+        } catch (e: Exception) {
+            "❌ Gemini tak connection nahi bana: ${e.javaClass.simpleName} ${e.message ?: ""}"
+        }
+    }
+
+    private fun callOnce(parts: JSONArray): String {
         val key = prefs.geminiKey
         if (key.isEmpty()) throw IllegalStateException("Gemini API key settings mein daalein")
         val body = JSONObject()
@@ -96,8 +134,8 @@ Return JSON only: {"script":"..."}
                 prefs.geminiModel + ":generateContent")
         val con = url.openConnection() as HttpURLConnection
         con.requestMethod = "POST"
-        con.connectTimeout = 15000
-        con.readTimeout = 45000
+        con.connectTimeout = 30000
+        con.readTimeout = 90000
         con.doOutput = true
         con.setRequestProperty("Content-Type", "application/json")
         con.setRequestProperty("x-goog-api-key", key)
